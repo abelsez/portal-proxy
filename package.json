@@ -1,0 +1,17 @@
+{
+  "_path": "package.json",
+  "_note": "Zero runtime dependencies: global fetch / Headers / AbortSignal.timeout are Node 18+ built-ins and are present in the Netlify Functions runtime. JSON has no comment syntax, so the file path lives in _path.",
+  "name": "portal-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless HTTP proxy on Netlify Functions for captive-portal work",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/local-harness.mjs",
+    "dev": "netlify dev",
+    "deploy": "netlify deploy --prod"
+  },
+  "dependencies": {}
+}

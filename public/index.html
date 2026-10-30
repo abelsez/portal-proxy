@@ -1,0 +1,156 @@
+<!-- public/index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>portal-proxy</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:#0b0f14; color:#e6edf3; padding:16px calc(16px + env(safe-area-inset-right)) 48px calc(16px + env(safe-area-inset-left)); }
+  h1 { font-size:19px; margin:0 0 2px; letter-spacing:-.01em; }
+  p.sub { color:#8b98a5; margin:0 0 18px; font-size:13px; }
+  .card { background:#121821; border:1px solid #1f2a37; border-radius:14px; padding:14px; margin-bottom:12px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#8b98a5; margin-bottom:6px; }
+  input { width:100%; padding:12px; font-size:16px; border-radius:10px; border:1px solid #2a3644;
+          background:#0b0f14; color:#e6edf3; }
+  input:focus { outline:2px solid #2f81f7; outline-offset:1px; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  button { font-size:14px; padding:11px 14px; border-radius:10px; border:1px solid #2a3644;
+           background:#1b2532; color:#e6edf3; font-weight:600; }
+  button.primary { background:#2f81f7; border-color:#2f81f7; color:#fff; }
+  button:active { transform:translateY(1px); }
+  button.grid { flex:1 1 46%; text-align:left; }
+  pre { margin:10px 0 0; padding:12px; background:#0b0f14; border:1px solid #1f2a37; border-radius:10px;
+        font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; word-break:break-all;
+        max-height:42vh; overflow:auto; }
+  .ok { color:#3fb950; } .bad { color:#f85149; } .warn { color:#d29922; } .dim { color:#8b98a5; }
+  .px { font-size:12px; color:#8b98a5; margin-top:8px; word-break:break-all; }
+  a { color:#58a6ff; }
+</style>
+</head>
+<body>
+<h1>portal-proxy</h1>
+<p class="sub">Netlify Functions relay. Targets are base64url-encoded into the path; nothing is stored server-side.</p>
+
+<div class="card">
+  <label for="target">Target URL</label>
+  <input id="target" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+         placeholder="http://1.1.1.1/login  or  https://example.com">
+  <div class="row">
+    <button class="primary" id="go">Proxy it</button>
+    <button id="copy">Copy proxy URL</button>
+  </div>
+  <div class="px" id="px"></div>
+</div>
+
+<div class="card">
+  <label>One-tap OS probes (through the proxy)</label>
+  <div class="row">
+    <button class="grid" data-probe="http://connectivitycheck.gstatic.com/generate_204">Android / generate_204</button>
+    <button class="grid" data-probe="http://captive.apple.com/hotspot-detect.html">Apple hotspot-detect</button>
+    <button class="grid" data-probe="http://www.msftconnecttest.com/connecttest.txt">Windows NCSI</button>
+    <button class="grid" data-probe="http://detectportal.firefox.com/canonical.html">Firefox canonical</button>
+  </div>
+  <div class="row">
+    <button class="primary" id="sweep">Run portal verdict</button>
+  </div>
+</div>
+
+<div class="card">
+  <label>Result</label>
+  <pre id="out" class="dim">idle</pre>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const out = $('out');
+  const log = (msg, cls) => {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  };
+  const reset = () => { out.textContent = ''; };
+
+  // base64url of the UTF-8 target: the only target form Netlify's path rewriting
+  // cannot damage (no "//" to collapse, no "%" to double-decode).
+  const b64url = (s) => {
+    const bytes = new TextEncoder().encode(s);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  const proxyUrl = (target) => location.origin + '/proxy/b64/' + b64url(target);
+
+  const current = () => {
+    const v = $('target').value.trim();
+    if (!v) return null;
+    try { return new URL(v).toString(); } catch { return null; }
+  };
+
+  const paint = () => {
+    const t = current();
+    $('px').textContent = t ? proxyUrl(t) : 'type an absolute http(s) URL';
+  };
+  $('target').addEventListener('input', paint);
+  paint();
+
+  $('go').addEventListener('click', () => {
+    const t = current();
+    if (!t) { reset(); log('Not an absolute http(s) URL.', 'bad'); return; }
+    location.href = proxyUrl(t);
+  });
+
+  $('copy').addEventListener('click', async () => {
+    const t = current();
+    if (!t) return;
+    try { await navigator.clipboard.writeText(proxyUrl(t)); log('copied', 'ok'); }
+    catch { log('clipboard unavailable; long-press the URL above', 'warn'); }
+  });
+
+  for (const b of document.querySelectorAll('[data-probe]')) {
+    b.addEventListener('click', () => {
+      location.href = proxyUrl(b.dataset.probe);
+    });
+  }
+
+  // Verdict: fetch each OS probe through the proxy and compare against what the
+  // canonical endpoint must return. Anything else - a 302, an HTML body, an
+  // unexpected 200 - means an intercepting gateway, i.e. a captive portal.
+  $('sweep').addEventListener('click', async () => {
+    reset();
+    const probes = [
+      { name: 'generate_204', url: 'http://connectivitycheck.gstatic.com/generate_204', ok: (r) => r.status === 204 },
+      { name: 'apple', url: 'http://captive.apple.com/hotspot-detect.html', ok: (r, b) => r.status === 200 && b.includes('Success') },
+      { name: 'ncsi', url: 'http://www.msftconnecttest.com/connecttest.txt', ok: (r, b) => r.status === 200 && b.includes('Microsoft Connect Test') },
+    ];
+    for (const p of probes) {
+      const started = performance.now();
+      try {
+        const r = await fetch(proxyUrl(p.url), { redirect: 'manual', cache: 'no-store' });
+        const body = await r.text();
+        const ms = Math.round(performance.now() - started);
+        const good = p.ok(r, body);
+        log(`${good ? 'OK   ' : 'PORTAL'}  ${p.name.padEnd(14)} ${r.status} ${ms}ms  ${good ? '' : body.slice(0, 120).replace(/\s+/g, ' ')}`,
+            good ? 'ok' : 'bad');
+      } catch (e) {
+        log(`ERROR ${p.name.padEnd(14)} ${e.message}`, 'warn');
+      }
+    }
+    try {
+      const h = await fetch('/proxy/healthz').then((r) => r.json());
+      log(`healthz: key ${h.key_present ? 'present' : 'MISSING'} fp=${h.key_fingerprint} allowlist=${h.allowlist_mode} private=${h.private_hosts}`, 'dim');
+    } catch (e) {
+      log('healthz failed: ' + e.message, 'warn');
+    }
+  });
+})();
+</script>
+</body>
+</html>

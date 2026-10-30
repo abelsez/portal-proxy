@@ -1,0 +1,48 @@
+# netlify.toml
+
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Tunables (override per-site in the Netlify UI, never hardcode secrets here)
+  PROXY_TIMEOUT_MS = "8000"
+  PROXY_MAX_BYTES = "5500000"
+
+[functions]
+  node_bundler = "esbuild"
+  # Every function times out at 10 s on the free tier; the handler aborts at 8 s
+  # so the client gets a clean JSON 502 instead of Netlify's gateway timeout page.
+
+# /proxy/<anything> -> /.netlify/functions/proxy/<anything>
+# status 200 = rewrite (the client keeps the /proxy/ URL, no redirect loop).
+[[redirects]]
+  from = "/proxy/*"
+  to = "/.netlify/functions/proxy/:splat"
+  status = 200
+  force = true
+
+# Bare /proxy -> handler (it will answer 400 missing_target, which is correct).
+[[redirects]]
+  from = "/proxy"
+  to = "/.netlify/functions/proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    cache-control = "no-store"
+    x-content-type-options = "nosniff"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    referrer-policy = "no-referrer"
+    x-content-type-options = "nosniff"
