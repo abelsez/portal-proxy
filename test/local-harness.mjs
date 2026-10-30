@@ -118,6 +118,7 @@ async function check(name, event, expect) {
 const port = await listen();
 const base = `http://127.0.0.1:${port}`;
 const p = (s) => `/.netlify/functions/proxy/${s}`;
+const pub = (s) => `/proxy/${s}`; // what Netlify's 200 rewrite actually leaves in event.path
 
 try {
   // --- config / parsing -----------------------------------------------------
@@ -148,6 +149,25 @@ try {
   await check('file:// scheme -> 400', ev(p('file:///etc/passwd')), {
     statusCode: 400,
     json: { 'error.code': 'scheme_not_allowed' },
+  });
+
+  // --- the public /proxy/* shape (regression: the deployed rewrite preserves it)
+  process.env.PROXY_ALLOW_PRIVATE = '1'; // targets below are on loopback
+  await check('public /proxy/<target> -> 200', ev(pub(base + '/publicshape')), {
+    statusCode: 200,
+    bodyIncludes: '"/publicshape"',
+  });
+  await check('public /proxy/healthz -> healthz JSON', ev(pub('healthz')), {
+    statusCode: 200,
+    json: { ok: true, key_present: true },
+  });
+  await check('public /proxy/ (empty) -> 400 missing_target', ev(pub('')), {
+    statusCode: 400,
+    json: { 'error.code': 'missing_target' },
+  });
+  await check('public /proxy/https%3A%2F%2F... -> 200', ev(pub(encodeURIComponent(base + '/encodedpub'))), {
+    statusCode: 200,
+    bodyIncludes: '/encodedpub',
   });
 
   // --- success paths --------------------------------------------------------

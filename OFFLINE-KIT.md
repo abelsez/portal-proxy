@@ -47,3 +47,12 @@
 - MAC clone/rotate, DHCP option 121, second interface — NET_ADMIN.
 - WS/H2/H3/MASQUE/WebTransport tunnels — need a persistent server; Netlify Functions
   are request-scoped (10 s max).
+
+## Live deployment (verified 2026-10-30T23:45Z)
+- site: **https://portal-proxy-kestrel.netlify.app**  (id `527edffd-1359-43e0-af95-5d81232a88a2`, account abelsez)
+- relay: `https://portal-proxy-kestrel.netlify.app/proxy/<absolute-url>`, `https://portal-proxy-kestrel.netlify.app/proxy/<percent-encoded>`, `https://portal-proxy-kestrel.netlify.app/proxy/b64/<base64url>`
+- panel: `https://portal-proxy-kestrel.netlify.app/bypass.html`   health: `https://portal-proxy-kestrel.netlify.app/proxy/healthz` (key fingerprint = rotation canary)
+- one bug the local harness could not see: after a 200 rewrite Netlify keeps the ORIGINAL
+  path in `event.path`, so `/proxy/x` reached the handler as `/proxy/x`, not
+  `/.netlify/functions/proxy/x`. Fixed in `restOfPath()`; the harness now tests both shapes.
+- redeploy: `netlify deploy --prod --site 527edffd-1359-43e0-af95-5d81232a88a2`

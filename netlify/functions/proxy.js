@@ -157,11 +157,16 @@ function allowlistAllows(cfg, url) {
 // it may arrive percent-encoded, with "//" collapsed to "/", or as base64url.
 // Matches any function name, so the streaming twin in proxy-stream.mjs can share it.
 const FUNCTION_RE = /^\/\.netlify\/functions\/[^/]+\/?/;
+const PUBLIC_PREFIX_RE = /^\/?proxy\/?/i;
 function restOfPath(eventPath) {
   let rest = String(eventPath || '');
   if (rest.startsWith(FUNCTION_PREFIX)) rest = rest.slice(FUNCTION_PREFIX.length);
-  rest = rest.replace(FUNCTION_RE, '').replace(/^\/+/, '');
-  return rest;
+  rest = rest.replace(FUNCTION_RE, '');
+  // Netlify preserves the ORIGINAL path in event.path after a 200 rewrite, so a
+  // request for /proxy/<target> arrives here as "/proxy/<target>", not as
+  // "/.netlify/functions/proxy/<target>". Strip whichever form we got.
+  rest = rest.replace(PUBLIC_PREFIX_RE, '');
+  return rest.replace(/^\/+/, '');
 }
 
 function b64urlDecode(s) {
