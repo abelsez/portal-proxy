@@ -31,9 +31,29 @@ hr "link"
 command -v termux-wifi-connectioninfo >/dev/null && timeout 10 termux-wifi-connectioninfo | tr -d '\n ' | sed 's/","/",\n"/g' | head -8
 [ -n "$MAC" ] && echo "mac (typed): $MAC" || echo "mac (typed): none — trial-login attempts will be skipped"
 
+hr "am I really on the portal network"
+PHOST="$(printf '%s' "$PORTAL" | sed -E 's#^[a-z]+://([^/:]+).*#\1#')"
+if python3 -c "import socket,sys;socket.setdefaulttimeout(4);socket.gethostbyname('$PHOST')" 2>/dev/null; then
+  echo "portal host $PHOST resolves  -> you are on that network"
+  ONPORTAL=1
+else
+  echo "portal host $PHOST does NOT resolve -> you are NOT on that network"
+  echo "  (still on home wifi, or the phone fell back to mobile data)"
+  ONPORTAL=0
+fi
+ip4="$(timeout 8 termux-wifi-connectioninfo 2>/dev/null | sed -n 's/.*"ip": *"\([^"]*\)".*/\1/p')"
+[ -n "$ip4" ] && echo "local IPv4     : $ip4"
+
 hr "walled or open"
 code="$(curl -s -o /dev/null -m 8 -w '%{http_code}' "$EGRESS")"
 echo "egress $EGRESS -> $code   ($([ "$code" = 204 ] && echo OPEN || echo WALLED))"
+if [ "$code" = 204 ] && [ "${ONPORTAL:-0}" = 1 ]; then
+  echo
+  echo "!! 204 while sitting on the portal network means one of:"
+  echo "   a) mobile data is still up and the phone routes around the portal,"
+  echo "   b) this device was already authorised earlier (trial/MAC cache)."
+  echo "   Turn mobile data OFF, forget the network, rejoin, and run this again."
+fi
 
 hr "portal fingerprint (read-only)"
 curl -sS -m 12 -D "$LOG/hdr-$STAMP.txt" -o "$LOG/portal-$STAMP.html" "$PORTAL" || true
