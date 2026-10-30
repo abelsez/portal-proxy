@@ -155,10 +155,12 @@ function allowlistAllows(cfg, url) {
 
 // The path after the function prefix, with Netlify's cosmetic damage repaired:
 // it may arrive percent-encoded, with "//" collapsed to "/", or as base64url.
+// Matches any function name, so the streaming twin in proxy-stream.mjs can share it.
+const FUNCTION_RE = /^\/\.netlify\/functions\/[^/]+\/?/;
 function restOfPath(eventPath) {
   let rest = String(eventPath || '');
   if (rest.startsWith(FUNCTION_PREFIX)) rest = rest.slice(FUNCTION_PREFIX.length);
-  rest = rest.replace(/^\/+/, '');
+  rest = rest.replace(FUNCTION_RE, '').replace(/^\/+/, '');
   return rest;
 }
 
@@ -398,4 +400,22 @@ exports.handler = async function handler(event) {
     body: buf.length === 0 ? '' : asText ? buf.toString('utf8') : buf.toString('base64'),
     isBase64Encoded: buf.length > 0 && !asText,
   };
+};
+
+// Exported for the local harness (and any future streaming sibling). Not part of
+// the HTTP surface: nothing here is reachable from a request.
+exports._internals = {
+  env,
+  err,
+  json,
+  restOfPath,
+  extractTarget,
+  buildRequestHeaders,
+  buildResponseHeaders,
+  isPrivateHost,
+  allowlistAllows,
+  tokenOk,
+  fingerprint,
+  STRIP_RESPONSE,
+  SECURITY_HEADERS,
 };
