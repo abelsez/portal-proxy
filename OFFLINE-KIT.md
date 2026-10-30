@@ -1,0 +1,49 @@
+# ~/portal — offline captive-portal kit (no root, no sudo, no internet needed)
+
+## What is here
+| file | use |
+|---|---|
+| `go-offline.sh` | one command: link info, walled/open check, portal fingerprint, nowifi diagnose, click-through ladder, verdict, full transcript |
+| `portal-hit.sh` | the ladder on its own (if you only want to shoot) |
+| `bypass.html` | browser panel: detection verdict, relay reachability, form parse, "copy as curl" |
+| `serve-local.mjs` | serves `bypass.html` on http://127.0.0.1:8000 (Chrome cannot open file:// from Termux) |
+| `mac.txt` | put your device MAC here (one line) so MikroTik trial attempts can run |
+| `logs/` | every run is saved here; paste `run-*.txt` afterwards |
+
+## The commands, in order
+
+1) MAC (optional but worth it — MikroTik trial login uses it). Settings → Wi-Fi →
+   the network → Privacy → the randomized MAC, e.g. `da:1f:2c:33:44:55`.
+
+    printf '%s\n' 'da:1f:2c:33:44:55' > ~/portal/mac.txt
+
+2) On the captive portal network, one command:
+
+    bash ~/portal/go-offline.sh http://wau.wifi/login
+
+   If the login URL is different, use it. `https://` portals: same command, https URL.
+   Skip the slow diagnosis with `SKIP_NOWIFI=1 bash ~/portal/go-offline.sh <url>`.
+
+3) Optional, in a second Termux session, for the browser rungs:
+
+    node ~/portal/serve-local.mjs
+    # then open http://127.0.0.1:8000/ in Chrome
+
+4) Paste the result back: `~/portal/logs/run-*.txt`
+
+## How to read the verdict
+- `egress ... -> 204 (OPEN)` — online. If the ladder also printed GRANTED, check the
+  log: something else may have opened it (trial timer, MAC cache, a second tab).
+- `GRANTED` — the gateway accepted a request it should have refused, proven by the
+  204 probe, not by the portal's own page.
+- `NOT GRANTED (exit 1)` — auth is enforced server-side. The remaining rungs need
+  root or a tunnel domain: accept it and say so. `nowifi forensics` gives you the
+  read-only evidence pack.
+
+## What will NOT work here, and why (do not re-test)
+- `nowifi` / `sudo nowifi` — no root in Termux; only `nowifi diagnose` and
+  `nowifi forensics` are read-only and usable.
+- DNS/ICMP/NTP tunnels — raw sockets + a domain with NS delegation that we do not own.
+- MAC clone/rotate, DHCP option 121, second interface — NET_ADMIN.
+- WS/H2/H3/MASQUE/WebTransport tunnels — need a persistent server; Netlify Functions
+  are request-scoped (10 s max).

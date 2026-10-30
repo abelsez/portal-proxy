@@ -78,6 +78,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === '/login' && MIKROTIK && req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(mikrotikPage(''));
+  }
+
   if (url.pathname === '/' && MIKROTIK) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(mikrotikPage(''));
