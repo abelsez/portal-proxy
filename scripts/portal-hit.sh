@@ -109,6 +109,70 @@ class Forms(HTMLParser):
 p = Forms(); p.feed(html)
 forms = [f for f in p.forms if f['fields']]
 
+# ---------------------------------------------------------------- md5 mode ---
+# RouterOS (and clones) hash the password in the page:
+#   document.sendin.password.value = hexMD5("\167" + password + "\002\317...")
+# Posting cleartext there can never succeed, no matter how right the credential
+# is. Parse the actual expression instead of assuming a fixed challenge.
+import hashlib, re as _re
+
+_ESC = {'n': '\n', 'r': '\r', 't': '\t', 'b': '\b', 'f': '\f', 'v': '\v',
+        '0': '\0', '\\': '\\', "'": "'", '"': '"'}
+
+def _unescape(js):
+    out, i = [], 0
+    while i < len(js):
+        c = js[i]
+        if c != '\\' or i + 1 >= len(js):
+            out.append(c); i += 1; continue
+        n = js[i + 1]
+        if n == 'x' and _re.match(r'[0-9a-fA-F]{2}', js[i+2:i+4]):
+            out.append(chr(int(js[i+2:i+4], 16))); i += 4; continue
+        if n == 'u' and _re.match(r'[0-9a-fA-F]{4}', js[i+2:i+6]):
+            out.append(chr(int(js[i+2:i+6], 16))); i += 6; continue
+        if n in '01234567':
+            m = _re.match(r'[0-7]{1,3}', js[i+1:])
+            out.append(chr(int(m.group(0), 8) & 0xff)); i += 1 + len(m.group(0)); continue
+        out.append(_ESC.get(n, n)); i += 2
+    return ''.join(out)
+
+def _literals(expr):
+    """('pre','post') of literal-only parts around the password token."""
+    _q = r'[\x22\x27]'
+    _notq = r'[^\x22\x27\\]'
+    parts = _re.findall(_q + r'((?:' + _notq + r'|\\.)*)' + _q + r'|([A-Za-z_$][\w$.]*)', expr)
+    pre, post, seen_pw = [], [], False
+    for lit, ident in parts:
+        if ident:
+            if 'password' in ident.lower():
+                seen_pw = True
+            continue
+        (post if seen_pw else pre).append(_unescape(lit))
+    return ''.join(pre), ''.join(post)
+
+CHAL = None
+_m = _re.search(r'hexMD5\s*\(', html)
+if _m:
+    depth, j = 1, _m.end()
+    while j < len(html) and depth:
+        if html[j] == '(': depth += 1
+        elif html[j] == ')': depth -= 1
+        j += 1
+    expr = html[_m.end():j-1]
+    pre, post = _literals(expr)
+    # an unresolvable identifier (var challenge = "...") gets substituted if the
+    # page defines it as a literal
+    leftover = [t for t in _re.findall(r'[A-Za-z_$][\w$]*', expr) if 'password' not in t.lower()]
+    for name in leftover:
+        vm = _re.search(r'(?:var\s+)?' + _re.escape(name) + r'\s*=\s*([\x22\x27])(.*?)\1', html)
+        if vm:
+            pre += _unescape(vm.group(2))
+    if pre or post:
+        CHAL = (pre, post)
+
+def _hashed(pw):
+    return hashlib.md5((CHAL[0] + pw + CHAL[1]).encode('latin-1')).hexdigest() if CHAL else pw
+
 # Portals that only check in JS still carry the fields in the DOM; portals that
 # enforce server-side carry the same fields and will refuse. We cannot tell them
 # apart statically, so we try both orders and let egress decide.
@@ -127,6 +191,7 @@ for f in forms:
     mac_l = MAC.lower()
     mac_d = mac_l.replace(':', '-')
     CREDS = {
+        'guestcred': ('guest', 'guest'),
         'blank':  ('', ''),
         'admin':  ('admin', 'admin'),
         'adminp': ('admin', ''),
@@ -139,6 +204,11 @@ for f in forms:
         out = list(base_fields)
         if mode in CREDS:
             user, pw = CREDS[mode]
+            # Drop the page's own hidden username/password first: keeping them
+            # would send the field twice, and the gateway reads the FIRST value
+            # (so the credential we just set would be ignored).
+            _cred = {'username', 'user', 'login', 'password', 'pass', 'passwd'}
+            out = [(k, v) for k, v in base_fields if k.lower() not in _cred]
             for x in f['fields']:
                 n = x['name'].lower()
                 if n in ('username', 'user', 'login'):
@@ -177,6 +247,7 @@ for f in forms:
     ]
     if has_cred:
         ladder += [
+            ('guestcred', 'guest / guest', UA_BROWSER),
             ('blank',  'empty username + empty password', UA_BROWSER),
             ('admin',  'admin / admin', UA_BROWSER),
             ('adminp', 'admin / empty password', UA_BROWSER),
@@ -199,8 +270,15 @@ for f in forms:
             idx += 1
             rows.append((idx, method, action, '&'.join('%s=%s' % kv for kv in pairs), label, ua))
 
+    if CHAL:
+        # hashed first: on a hashing firmware the cleartext form cannot work
+        ladder = [('h:' + m, l + ' [md5]', u) for m, l, u in ladder] + ladder
+
     for mode, label, ua in ladder:
-        pairs = payload(mode)
+        hsh = mode.startswith('h:')
+        pairs = payload(mode[2:] if hsh else mode)
+        if hsh:
+            pairs = [(k, _hashed(v) if k.lower() in ('password', 'pass', 'passwd') else v) for k, v in pairs]
         # de-dup on the exact request shape
         key = (method, action, tuple(pairs), ua)
         if key in seen:
@@ -210,6 +288,8 @@ for f in forms:
         body = '&'.join(f'{k}={v}' for k, v in pairs)
         rows.append((idx, method, action, body, label, ua))
 
+if CHAL:
+    print('#CHAL\t\t\t\t\t' + repr(CHAL[0]) + ' / ' + repr(CHAL[1]))
 for r in rows:
     print('\t'.join(str(x) for x in r))
 

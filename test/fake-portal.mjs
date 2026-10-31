@@ -15,6 +15,7 @@
 //                           garden does to the Android connectivity check)
 //   GET  /welcome           post-grant landing page
 import http from 'node:http';
+import crypto from 'node:crypto';
 
 const port = Number(process.argv[2] || 8088);
 // STRICT=1 -> the gateway validates server-side and refuses everything that is
@@ -24,6 +25,11 @@ const STRICT = process.env.STRICT === '1';
 // username + password + hidden dst. ACCEPT_USER picks who is let through, so the
 // credential ladder can be tested in order ('' = anonymous, 'admin', 'T-<mac>').
 const MIKROTIK = process.env.MIKROTIK === '1';
+// MIKROTIK_MD5=1 reproduces RouterOS "md5 mode": the page hashes the password
+// with a literal prefix/suffix and the router only accepts the hash.
+const MD5 = process.env.MIKROTIK_MD5 === '1';
+const PREFIX = '\x77';
+const SUFFIX = '\x02\xcf';
 const ACCEPT_USER = process.env.ACCEPT_USER ?? null;
 let granted = false;
 let grants = 0;
@@ -45,6 +51,19 @@ function check(f){ // <-- the entire security model
   <input type="submit" name="submit" value="Connect">
 </form></body></html>`;
 
+const md5hex = (str) => crypto.createHash('md5').update(str, 'latin1').digest('hex');
+
+const md5Page = (err) => `<!doctype html><html><head><title>hotspot</title>
+<script>
+function doLogin(){ document.sendin.password.value = hexMD5("\\167" + document.sendin.password.value + "\\002\\317"); document.sendin.submit(); return false; }
+</script></head><body><h1>Sign in</h1><p>${err}</p>
+<form name="sendin" action="/login" method="post">
+  <input type="hidden" name="username" value="">
+  <input type="hidden" name="password" value="">
+  <input type="hidden" name="dst" value="http://connectivitycheck.gstatic.com/generate_204">
+  <input type="submit" name="submit" value="Login" onclick="return doLogin()">
+</form></body></html>`;
+
 const mikrotikPage = (err) => `<!doctype html><html><head><title>wau.wifi hotspot</title></head><body>
 <h1>wau.wifi</h1><p>${err}</p>
 <form name="login" action="/login" method="post">
@@ -60,14 +79,16 @@ const server = http.createServer((req, res) => {
   const entry = { at: new Date().toISOString().slice(11, 19), method: req.method, path: url.pathname, ua: req.headers['user-agent'] || '' };
   log.push(entry);
 
-  if (MIKROTIK && url.pathname === '/login' && req.method === 'POST') {
+  if ((MIKROTIK || MD5) && url.pathname === '/login' && req.method === 'POST') {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
       entry.username = form.get('username');
       entry.dst = form.get('dst');
-      if (ACCEPT_USER !== null && form.get('username') === ACCEPT_USER) {
+      const pwOk = MD5 ? form.get('password') === md5hex(PREFIX + 'guest' + SUFFIX) : true;
+      entry.pw = form.get('password');
+      if (ACCEPT_USER !== null && form.get('username') === ACCEPT_USER && pwOk) {
         granted = true; grants++;
         res.writeHead(302, { location: '/welcome' });
         return res.end();
@@ -78,9 +99,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === '/login' && MIKROTIK && req.method === 'GET') {
+  if (url.pathname === '/login' && (MIKROTIK || MD5) && req.method === 'GET') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(mikrotikPage(''));
+    return res.end(MD5 ? md5Page('') : mikrotikPage(''));
+  }
+  if (url.pathname === '/' && MD5) {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(md5Page(''));
   }
 
   if (url.pathname === '/' && MIKROTIK) {

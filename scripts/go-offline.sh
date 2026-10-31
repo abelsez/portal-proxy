@@ -10,7 +10,19 @@
 #   SKIP_NOWIFI=1 bash ~/portal/go-offline.sh http://wau.wifi/login   # skip diagnosis
 set -uo pipefail
 
-PORTAL="${1:-http://wau.wifi/login}"
+PORTAL="${1:-}"
+# No URL? Find the portal on whatever network this is. The name never matters:
+# the gateway announces itself by redirecting a probe that must never redirect.
+if [ -z "$PORTAL" ]; then
+  PORTAL="$(bash "$(dirname "$0")/portal-find.sh" --url -q 2>/dev/null | head -1)"
+  if [ -z "$PORTAL" ]; then
+    echo "No captive portal on this network (probes answered as they should)."
+    echo "Nothing to bypass. If you expected a portal, check you are on the venue SSID"
+    echo "and that mobile data is off." >&2
+    exit 0
+  fi
+  echo "auto-detected portal: $PORTAL"
+fi
 BASE="${PORTAL%%/login*}"
 EGRESS="${2:-${EGRESS:-http://connectivitycheck.gstatic.com/generate_204}}"
 LOG="$HOME/portal/logs"

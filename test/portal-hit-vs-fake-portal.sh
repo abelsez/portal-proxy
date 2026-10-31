@@ -65,7 +65,25 @@ run_mikrotik() {
   return 1
 }
 
+# RouterOS md5 mode: the page hashes the password, so only the hashed variant
+# can be accepted. Also the regression test for duplicate username/password keys.
+run_md5() {
+  local port="$1" out="$HOME/tmp/ph-$1.out"
+  MIKROTIK_MD5=1 ACCEPT_USER=guest node test/fake-portal.mjs "$port" >"$HOME/tmp/fp-$port.log" 2>&1 &
+  local pid=$!
+  for _ in $(seq 1 40); do curl -s -o /dev/null -m 2 "http://127.0.0.1:$port/" && break; sleep 0.2; done
+  bash scripts/portal-hit.sh "http://127.0.0.1:$port/login" "http://127.0.0.1:$port/generate_204" >"$out" 2>&1
+  local code=$?
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  if [ $code -eq 0 ] && grep -q 'guest / guest \[md5\]' "$out"; then
+    echo "PASS  mikrotik md5 mode -> granted by the hashed guest credential"
+    return 0
+  fi
+  echo "FAIL  mikrotik md5 mode -> exit $code"; sed -n '/attempts/,/verdict/p' "$out" | head -10; return 1
+}
+
 rc=0
+run_md5 18084 || rc=1
 run_case "weak portal (JS-only validation)" 18080 0 GRANTED || rc=1
 run_case "strict portal (server-side voucher)" 18081 1 NOTGRANTED || rc=1
 run_mikrotik "mikrotik: anonymous login accepted (attempt 1 = empty creds)" 18082 "" 1 || rc=1

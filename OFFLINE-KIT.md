@@ -10,6 +10,19 @@
 | `mac.txt` | put your device MAC here (one line) so MikroTik trial attempts can run |
 | `logs/` | every run is saved here; paste `run-*.txt` afterwards |
 
+## Universal: you never need to know the portal's name
+`portal-find.sh` asks six canonical probes (>204, apple "Success", msft "Microsoft Connect Test",
+gstatic/gstatic-2/hicloud 204, example.com "Example Domain") what the gateway does with them:
+
+| gateway behaviour | verdict |
+|---|---|
+| 30x with a Location | portal at that Location (relative redirects resolved) |
+| 200 whose body is wrong | inline interception, portal is the URL you asked for |
+| expected answer | that probe is open |
+
+`go-offline.sh` with **no arguments** calls it and proceeds; `bash ~/portal/portal-find.sh --url`
+prints just the URL. Name-agnostic by construction: `wau.wifi`, `edymax2.spot`, `10.0.0.1`, any host.
+
 ## The commands, in order
 
 1) MAC (optional but worth it — MikroTik trial login uses it). Settings → Wi-Fi →
@@ -17,9 +30,9 @@
 
     printf '%s\n' 'da:1f:2c:33:44:55' > ~/portal/mac.txt
 
-2) On the captive portal network, one command:
+2) On any captive portal network, one command (no URL needed):
 
-    bash ~/portal/go-offline.sh http://wau.wifi/login
+    bash ~/portal/go-offline.sh
 
    If the login URL is different, use it. `https://` portals: same command, https URL.
    Skip the slow diagnosis with `SKIP_NOWIFI=1 bash ~/portal/go-offline.sh <url>`.
